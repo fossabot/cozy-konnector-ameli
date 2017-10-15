@@ -14,46 +14,49 @@ let rq = request({
   jar: true
 })
 
-module.exports = new BaseKonnector(function fetch (fields) {
-  return checkLogin(fields)
-  .then(() => logIn(fields))
-  .then($ => fetchMainPage($))
-  .then($ => parseMainPage($))
-  .then(reimbursements => getBills(reimbursements))
-  .then(entries => {
-    // get custom bank identifier if any
-    let identifiers = 'C.P.A.M.'
-    if (fields.bank_identifier && fields.bank_identifier.length) {
-      identifiers = fields.bank_identifier
-    }
+module.exports = new BaseKonnector(fields => {
+  const {login, password} = fields
 
-    return saveBills(entries, fields.folderPath, {
-      timeout: Date.now() + 60 * 1000,
-      identifiers,
-      dateDelta: 10,
-      amountDelta: 0.1
+  return checkLogin(login)
+    .then(checkedLogin => logIn(checkedLogin, password))
+    .then(reimbursementPage => getBillsPage(reimbursementPage))
+    .then(billsPage => parseBillsPage(billsPage))
+    .then(reimbursements => getBills(reimbursements))
+    .then(entries => {
+      // get custom bank identifier if any
+      let identifiers = 'C.P.A.M.'
+      if (fields.bank_identifier && fields.bank_identifier.length) {
+        identifiers = fields.bank_identifier
+      }
+
+      return saveBills(entries, fields.folderPath, {
+        timeout: Date.now() + 60 * 1000,
+        identifiers,
+        dateDelta: 10,
+        amountDelta: 0.1
+      })
     })
-  })
 })
 
-const checkLogin = function (fields) {
-  log('info', 'Checking the length of the login')
-  if (fields.login.length > 13) {
-    // remove the key from the social security number
-    fields.login = fields.login.substr(0, 13)
-    log('debug', `Fixed the login length to 13`)
-  }
+const getFileName = date => {
+  return `${moment(date).format('YYYYMMDD')}_ameli.pdf`
+}
 
-  return Promise.resolve()
+const trimText = cheeriosElem => cheeriosElem.text().trim()
+
+const checkLogin = login => {
+  log('info', 'Checking the length of the login')
+  // remove the key from the social security number
+  return Promise.resolve(login.substr(0, 13))
 }
 
 // Procedure to login to Ameli website.
-const logIn = function (fields) {
+const logIn = (login, password) => {
   log('info', 'Now logging in')
 
   const form = {
-    'connexioncompte_2numSecuriteSociale': fields.login,
-    'connexioncompte_2codeConfidentiel': fields.password,
+    'connexioncompte_2numSecuriteSociale': login,
+    'connexioncompte_2codeConfidentiel': password,
     'connexioncompte_2actionEvt': 'connecter',
     'submit': 'Valider'
   }
@@ -63,44 +66,44 @@ const logIn = function (fields) {
     resolveWithFullResponse: true
   })
   // First request to get the cookie
-  .then(res => rq({
-    method: 'POST',
-    form,
-    url: urlService.getSubmitUrl()
-  }))
-  // Second request to authenticate
-  .then($ => {
-    const $errors = $('#r_errors')
-    if ($errors.length > 0) {
-      log('debug', $errors.text(), 'These errors where found on screen')
-      throw new Error('LOGIN_FAILED')
-    }
+    .then(res => rq({
+      method: 'POST',
+      form,
+      url: urlService.getSubmitUrl()
+    }))
+    // Second request to authenticate
+    .then(authenticateRes => {
+      const $errors = authenticateRes('#r_errors')
+      if ($errors.length > 0) {
+        log('debug', $errors.text(), 'These errors where found on screen')
+        throw new Error('LOGIN_FAILED')
+      }
 
-    // The user must validate the CGU form
-    const $cgu = $('meta[http-equiv=refresh]')
-    if ($cgu.length > 0 && $cgu.attr('content').includes('as_conditions_generales_page')) {
-      log('debug', $cgu.attr('content'))
-      throw new Error('USER_ACTION_NEEDED')
-    }
+      // The user must validate the CGU form
+      const $cgu = authenticateRes('meta[http-equiv=refresh]')
+      if ($cgu.length > 0 && $cgu.attr('content').includes('as_conditions_generales_page')) {
+        log('debug', $cgu.attr('content'))
+        throw new Error('USER_ACTION_NEEDED')
+      }
 
-    // Default case. Something unexpected went wrong after the login
-    if ($('[title="Déconnexion du compte ameli"]').length !== 1) {
-      log('debug', $('body').html(), 'No deconnection link found in the html')
-      log('debug', 'Something unexpected went wrong after the login')
-      throw new Error('LOGIN_FAILED')
-    }
+      // Default case. Something unexpected went wrong after the login
+      if (authenticateRes('[title="Déconnexion du compte ameli"]').length !== 1) {
+        log('debug', authenticateRes('body').html(), 'No deconnection link found in the html')
+        log('debug', 'Something unexpected went wrong after the login')
+        throw new Error('LOGIN_FAILED')
+      }
 
-    log('info', 'Correctly logged in')
-    return rq(urlService.getReimbursementUrl())
-  })
+      log('info', 'Correctly logged in')
+      return rq(urlService.getReimbursementUrl())
+    })
 }
 
 // fetch the HTML page with the list of health cares
-const fetchMainPage = function ($) {
+const getBillsPage = reimbursementPage => {
   log('info', 'Fetching the list of bills')
 
   // Get end date to generate the bill's url
-  const endDate = moment($('#paiements_1dateFin').attr('value'), 'DD/MM/YYYY')
+  const endDate = moment(reimbursementPage('#paiements_1dateFin').attr('value'), 'DD/MM/YYYY')
 
   // We can get the history only 6 months back
   const billUrl = urlService.getBillUrl(endDate, 6)
@@ -109,24 +112,24 @@ const fetchMainPage = function ($) {
 }
 
 // Parse the fetched page to extract bill data.
-const parseMainPage = function ($) {
+const parseBillsPage = billsPage => {
   const reimbursements = []
   let i = 0
 
   // Each bloc represents a month that includes 0 to n reimbursement
-  $('.blocParMois').each(function () {
+  billsPage('.blocParMois').each(function () {
     // It would be too easy to get the full date at the same place
-    let year = $($(this).find('.rowdate .mois').get(0)).text()
+    let year = billsPage(billsPage(this).find('.rowdate .mois').get(0)).text()
     year = year.split(' ')[1]
 
-    return $(`[id^=lignePaiement${i++}]`).each(function () {
-      const month = $($(this).find('.col-date .mois').get(0)).text()
-      const day = $($(this).find('.col-date .jour').get(0)).text()
+    return billsPage(`[id^=lignePaiement${i++}]`).each(function () {
+      const month = billsPage(billsPage(this).find('.col-date .mois').get(0)).text()
+      const day = billsPage(billsPage(this).find('.col-date .jour').get(0)).text()
       let date = `${day} ${month} ${year}`
       date = moment(date, 'Do MMMM YYYY')
 
       // Retrieve and extract the infos needed to generate the pdf
-      const attrInfos = $(this).attr('onclick')
+      const attrInfos = billsPage(this).attr('onclick')
       const tokens = attrInfos.split("'")
 
       const idPaiement = tokens[1]
@@ -151,9 +154,9 @@ const parseMainPage = function ($) {
   })
   return bluebird.each(reimbursements, reimbursement => {
     return rq(reimbursement.detailsUrl)
-    .then($ => parseDetails($, reimbursement))
+      .then($ => parseDetails($, reimbursement))
   })
-  .then(() => reimbursements)
+    .then(() => reimbursements)
 }
 
 function parseDetails ($, reimbursement) {
@@ -162,7 +165,7 @@ function parseDetails ($, reimbursement) {
   $('.container:not(.entete)').each(function () {
     const $beneficiary = $(this).find('[id^=nomBeneficiaire]')
     if ($beneficiary.length > 0) { // a beneficiary container
-      currentBeneficiary = $beneficiary.text().trim()
+      currentBeneficiary = trimText($beneficiary)
       return null
     }
 
@@ -177,25 +180,25 @@ function parseDetails ($, reimbursement) {
   })
 }
 
-function parseAmount (amount) {
+const parseAmount = amount => {
   return parseFloat(amount.replace(' €', '').replace(',', '.'))
 }
 
-function parseHealthCares ($, container, beneficiary, reimbursement) {
-  $(container).find('tr').each(function () {
-    if ($(this).find('th').length > 0) {
+const parseHealthCares = ($, container, beneficiary, reimbursement) => {
+  $(container).find('tr').each((i, elem) => {
+    if ($(elem).find('th').length > 0) {
       return null // ignore header
     }
 
-    let date = $(this).find('[id^=Nature]').html().split('<br>').pop().trim()
+    let date = $(elem).find('[id^=Nature]').html().split('<br>').pop().trim()
     date = moment(date, 'DD/MM/YYYY')
     const healthCare = {
-      prestation: $(this).find('.naturePrestation').text().trim(),
+      prestation: trimText($(elem).find('.naturePrestation')),
       date,
-      montantPayé: parseAmount($(this).find('[id^=montantPaye]').text().trim()),
-      baseRemboursement: parseAmount($(this).find('[id^=baseRemboursement]').text().trim()),
-      taux: $(this).find('[id^=taux]').text().trim(),
-      montantVersé: parseAmount($(this).find('[id^=montantVerse]').text().trim())
+      montantPayé: parseAmount(trimText($(elem).find('[id^=montantPaye]'))),
+      baseRemboursement: parseAmount(trimText($(elem).find('[id^=baseRemboursement]'))),
+      taux: trimText($(elem).find('[id^=taux]')),
+      montantVersé: parseAmount(trimText($(elem).find('[id^=montantVerse]')))
     }
 
     reimbursement.beneficiaries[beneficiary] = reimbursement.beneficiaries[beneficiary] || []
@@ -203,26 +206,26 @@ function parseHealthCares ($, container, beneficiary, reimbursement) {
   })
 }
 
-function parseParticipation ($, container, reimbursement) {
-  $(container).find('tr').each(function () {
-    if ($(this).find('th').length > 0) {
+const parseParticipation = ($, container, reimbursement) => {
+  $(container).find('tr').each((i, elem) => {
+    if ($(elem).find('th').length > 0) {
       return null // ignore header
     }
 
     if (reimbursement.participation) {
       log('warning', 'There is already a participation, this case is not supposed to happend')
     }
-    let date = $(this).find('[id^=dateActePFF]').text().trim()
+    let date = trimText($(elem).find('[id^=dateActePFF]'))
     date = moment(date, 'DD/MM/YYYY')
     reimbursement.participation = {
-      prestation: $(this).find('[id^=naturePFF]').text().trim(),
+      prestation: trimText($(elem).find('[id^=naturePFF]')),
       date,
-      montantVersé: parseAmount($(this).find('[id^=montantVerse]').text().trim())
+      montantVersé: parseAmount(trimText($(elem).find('[id^=montantVerse]')))
     }
   })
 }
 
-function getBills (reimbursements) {
+const getBills = (reimbursements) => {
   const bills = []
   reimbursements.forEach(reimbursement => {
     for (const beneficiary in reimbursement.beneficiaries) {
@@ -258,8 +261,4 @@ function getBills (reimbursements) {
     }
   })
   return bills
-}
-
-function getFileName (date) {
-  return `${moment(date).format('YYYYMMDD')}_ameli.pdf`
 }
