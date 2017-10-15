@@ -13,10 +13,14 @@
     "cozy-konnector-libs": "^3.0.0-alpha.28"
   },
   "devDependencies": {
+    "babel-core": "^6.26.0",
+    "babel-loader": "^7.1.2",
+    "babel-plugin-transform-object-rest-spread": "^6.26.0",
+    "babel-preset-env": "^1.6.0",
     "copy-webpack-plugin": "^4.0.1",
     "git-directory-deploy": "^1.5.1",
     "standard": "^10.0.2",
-    "webpack": "^3.6.0"
+    "webpack": "^3.7.1"
   },
   "scripts": {
     "start": "node src/index.js",
