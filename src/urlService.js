@@ -4,10 +4,13 @@ class UrlService {
 
     this.baseUrl = `${domain}/PortailAS/paiements.do?actionEvt=`
     this.loginUrl = `${domain}/PortailAS/appmanager/PortailAS/assure?_somtc=true`
-    this.submitUrl = `${domain}/PortailAS/appmanager/PortailAS/` +
+    this.submitUrl =
+      `${domain}/PortailAS/appmanager/PortailAS/` +
       `assure?_nfpb=true&_windowLabel=connexioncompte_2&connexioncompte_2_` +
       `actionOverride=/portlets/connexioncompte/validationconnexioncompte&_pageLabel=as_login_page`
-    this.reimbursementUrl = `${domain}/PortailAS/appmanager/PortailAS/assure?_nfpb=true&_pageLabel=as_paiements_page`
+    this.reimbursementUrl = `${
+      domain
+    }/PortailAS/appmanager/PortailAS/assure?_nfpb=true&_pageLabel=as_paiements_page`
   }
 
   getBaseUrl () {
@@ -31,7 +34,9 @@ class UrlService {
    */
   getBillUrl (endDate, monthsBack) {
     const startDate = endDate.subtract(monthsBack, 'months').format('DD/MM/YYYY')
-    return `${this.getBaseUrl()}afficherPaiementsComplementaires&DateDebut=${startDate}&DateFin=${endDate}\
+    return `${this.getBaseUrl()}afficherPaiementsComplementaires&DateDebut=${startDate}&DateFin=${
+      endDate
+    }\
 &Beneficiaire=tout_selectionner&afficherReleves=false&afficherIJ=false&afficherInva=false&afficherRentes=false\
 &afficherRS=false&indexPaiement=&idNotif=`
   }

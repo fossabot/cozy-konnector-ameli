@@ -2,6 +2,7 @@
 .account
 .token.json
 konnector-dev-config.json*
+*_ameli.pdf
 
 # NPM
 node_modules/

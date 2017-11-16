@@ -15,6 +15,9 @@
   "devDependencies": {
     "copy-webpack-plugin": "^4.0.1",
     "git-directory-deploy": "^1.5.1",
+    "husky": "^0.14.3",
+    "lint-staged": "^5.0.0",
+    "prettier-standard": "^7.0.3",
     "standard": "^10.0.2",
     "webpack": "^3.6.0"
   },
@@ -22,14 +25,19 @@
     "start": "node src/index.js",
     "clean": "rm *_ameli.pdf",
     "dev": "cozy-konnector-dev src/index.js",
-    "standalone": "npm run clean ; cozy-konnector-standalone src/index.js && ls *_ameli.pdf | wc -l",
+    "standalone":
+      "npm run clean ; cozy-konnector-standalone src/index.js && ls *_ameli.pdf | wc -l",
     "standalone:record": "REPLAY=record cozy-konnector-standalone src/index.js",
     "standalone:replay": "REPLAY=replay cozy-konnector-standalone src/index.js",
     "build": "webpack",
     "lint": "standard --fix src/index.js",
-    "deploy:travis": "git-directory-deploy --username <YOUR_GH_USERNAME> --email <YOUR_EMAIL> --directory build/ --repo=https://$GITHUB_TOKEN@github.com/briced/cozy-konnector-v3-ameli.git",
-    "deploy": "git-directory-deploy --directory build/ --branch build --repo=https://github.com/briced/cozy-konnector-v3-ameli.git",
     "preversion": "npm run lint",
-    "postversion": "npm run build && npm run deploy && git push && git push --tags && rm -rf build/"
+    "postversion":
+      "npm run build && npm run deploy && git push && git push --tags && rm -rf build/",
+    "precommit": "lint-staged",
+    "prettify": "prettier-standard 'src/**/*.js'"
+  },
+  "lint-staged": {
+    "*.{js,json,css}": ["prettify", "git add"]
   }
 }
